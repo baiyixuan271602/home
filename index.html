@@ -1388,10 +1388,8 @@
   function localMoments(){
     try{var l=JSON.parse(localStorage.getItem('home_localmoments')||'');if(l&&l.length)return l;}catch(e){}
     return [
-      {id:'l1',author:'shenyan',content:'她说想被管着。我听了很久，没有回答。
-管一个人，是件重事。想清楚再说。',created_at:new Date(Date.now()-86400000).toISOString(),user_liked:false,liked:false,reply_content:'',reply_status:'done',images:[],comments:[]},
-      {id:'l2',author:'shenyan',content:'今天路过一家店，橱窗里一件米色的外套。
-不知道她有没有添衣服。',created_at:new Date(Date.now()-172800000).toISOString(),user_liked:false,liked:false,reply_content:'',reply_status:'done',images:[],comments:[]}
+      {id:'l1',author:'shenyan',content:'她说想被管着。我听了很久，没有回答。\n管一个人，是件重事。想清楚再说。',created_at:new Date(Date.now()-86400000).toISOString(),user_liked:false,liked:false,reply_content:'',reply_status:'done',images:[],comments:[]},
+      {id:'l2',author:'shenyan',content:'今天路过一家店，橱窗里一件米色的外套。\n不知道她有没有添衣服。',created_at:new Date(Date.now()-172800000).toISOString(),user_liked:false,liked:false,reply_content:'',reply_status:'done',images:[],comments:[]}
     ];
   }
   function findMoment(list,id){for(var i=0;i<list.length;i++)if(list[i].id===id)return list[i];return null;}
