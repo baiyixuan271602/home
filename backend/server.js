@@ -661,6 +661,7 @@ ${memories.slice(0, 800)}
     let text = cleanPushReply(out);
     text = text.replace(/\[post_moment\][\s\S]*?\[\/post_moment\]/gi, '').trim();
     if (!text) return null;
+    await ensureSession('main');
     await pool.query("INSERT INTO messages(session_id,role,content,is_push) VALUES('main','assistant',$1,true)", [text]);
     return text;
   } catch (e) {
