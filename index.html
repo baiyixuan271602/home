@@ -597,7 +597,7 @@
 (function(){
   var PWD='271602';
   /* ---- 云端 API 层 ---- */
-  var API_BASE=(localStorage.getItem('home_apibase')||'').replace(/\/+$/,'');
+  var API_BASE=(localStorage.getItem('home_apibase')||'https://home-backend-eetq.onrender.com').replace(/\/+$/,'');
   function setApiBase(v){API_BASE=v;localStorage.setItem('home_apibase',v);}
   function api(path,opts){
     opts=opts||{};
