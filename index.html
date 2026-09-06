@@ -297,6 +297,29 @@
   .mm-comment input{flex:1;border:none;outline:none;background:#F7F3E8;border-radius:14px;padding:8px 12px;font-size:13px;user-select:text;}
   .mm-comment button{border:none;background:none;color:var(--accent);font-size:13px;flex:none;}
 
+  /* 他的内心 */
+  .feel-card{background:linear-gradient(135deg,#4A4460,#7A6E9E);color:#F2EDE2;margin:14px 16px 0;border-radius:18px;padding:18px;}
+  .feel-card .f-label{font-size:10.5px;letter-spacing:3px;opacity:.7;}
+  .feel-card .f-body{font-size:17px;line-height:1.7;margin-top:8px;font-weight:600;}
+  .intent-card{background:var(--card);margin:10px 16px 0;border-radius:16px;padding:14px 16px;box-shadow:0 2px 8px rgba(60,50,30,.05);}
+  .intent-card .i-tag{font-size:11px;color:#fff;background:var(--accent);border-radius:8px;padding:2px 10px;display:inline-block;}
+  .intent-card .i-body{font-size:14.5px;color:var(--text);line-height:1.7;margin-top:8px;}
+  .drive-row{margin:10px 16px 0;}
+  .drive-row .d-top{display:flex;justify-content:space-between;font-size:12.5px;color:var(--text);margin-bottom:4px;}
+  .drive-row .d-val{color:var(--text-sub);}
+  .drive-bar{height:8px;background:#ECE6DC;border-radius:4px;overflow:hidden;}
+  .drive-bar i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,#8E7DB8,#B9A6D6);transition:width .5s;}
+  .drive-bar i.hi{background:linear-gradient(90deg,#C08270,#E0B4A8);}
+  .thought-item{background:var(--card);margin:8px 16px 0;border-radius:14px;padding:12px 14px;box-shadow:0 2px 8px rgba(60,50,30,.05);display:flex;align-items:center;gap:10px;}
+  .thought-item .t-kind{font-size:11px;border-radius:8px;padding:2px 8px;flex:none;}
+  .thought-item .t-kind.flit{background:#F1EBDD;color:#8A8378;}
+  .thought-item .t-kind.fixation{background:#E5DCF0;color:#6E5A90;}
+  .thought-item .t-text{flex:1;font-size:13.5px;color:var(--text);line-height:1.6;}
+  .thought-item .t-strength{font-size:11px;color:var(--text-sub);flex:none;}
+  .desire-feed{display:flex;gap:8px;margin:14px 16px 0;align-items:center;}
+  .desire-feed input{flex:1;border:1px solid var(--line);outline:none;background:#fff;border-radius:16px;padding:9px 14px;font-size:13.5px;user-select:text;}
+  .desire-feed button{border:none;background:var(--accent);color:#fff;border-radius:16px;padding:9px 16px;font-size:13px;flex:none;}
+
   .toast{position:fixed;left:50%;bottom:18%;transform:translateX(-50%) translateY(20px);background:rgba(60,55,45,.92);color:#FBF7EE;font-size:13.5px;padding:12px 20px;border-radius:14px;z-index:80;opacity:0;pointer-events:none;transition:.3s;max-width:80%;text-align:center;line-height:1.7;}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
   .set-row{display:flex;align-items:center;gap:10px;padding:15px 18px;background:var(--card);border-bottom:1px solid var(--line);}
@@ -556,6 +579,16 @@
   <button class="add-fab" id="wb-add">＋</button>
 </div>
 
+<!-- 他的内心 -->
+<div class="app-page" id="desire">
+  <div class="page-head"><button class="back-btn" data-back>‹</button><span class="page-title">他的内心</span></div>
+  <div class="page-body" id="desire-body" style="padding-bottom:40px"></div>
+  <div class="desire-feed" id="desire-feed-bar">
+    <input id="desire-feed-input" type="text" placeholder="喂他一个念头…">
+    <button id="desire-feed-btn">投喂</button>
+  </div>
+</div>
+
 <!-- 设置 -->
 <div class="app-page" id="settings">
   <div class="page-head"><button class="back-btn" data-back>‹</button><span class="page-title">设置</span></div>
@@ -715,6 +748,7 @@
     {id:'shop',n:'购物',i:'🛍',c:'#D8A48E'},
     {id:'calendar',n:'日历',i:'📅',c:'#B9D0A8'},
     {id:'worldbook',n:'世界书',i:'📖',c:'#7E97B8'},
+    {id:'desire',n:'他的内心',i:'💜',c:'#C08EA0'},
     {id:'archive',n:'档案',i:'🗂',c:'#C9C2B2'},
     {id:'settings',n:'设置',i:'⚙️',c:'#D8D2C2'}
   ];
@@ -735,6 +769,7 @@
     if(id==='worldbook')renderWbs();
     if(id==='wechat')loadHistory();
     if(id==='moments')renderMoments();
+    if(id==='desire')renderDesire();
     p.classList.add('open');
   }
   document.querySelectorAll('[data-back]').forEach(function(b){
@@ -1471,6 +1506,90 @@
       r.readAsDataURL(f);
     };
     inp.click();
+  };
+
+  
+  /* 他的内心（欲望面板） */
+  function renderDesire(){
+    var box=$('desire-body');
+    if(API_BASE){
+      api('/api/desire/state').then(function(j){
+        renderDesireView(j);
+      }).catch(function(){
+        renderDesireView(localDesireState());
+      });
+    }else{
+      renderDesireView(localDesireState());
+    }
+  }
+  function localDesireState(){
+    return {
+      feel:'有点想你。',
+      action_label:'逗逗她',
+      intent:{reason:'想凑过去逗逗她。',drive_key:'libido'},
+      labels:{attachment:'依恋',curiosity:'好奇',reflection:'沉淀',duty:'记挂',social:'人群',fatigue:'疲惫',libido:'情欲',stress:'压力'},
+      drive:{attachment:0.62,curiosity:0.55,reflection:0.50,duty:0.55,social:0.35,fatigue:0.20,libido:0.70,stress:0.25},
+      scores:{attachment:0.9,curiosity:0.55,reflection:0.50,duty:0.55,social:0.35,fatigue:0.20,libido:0.70,stress:0.25},
+      thoughts:[
+        {text:'她说想被管着。想清楚再说。',kind:'fixation',strength:0.90},
+        {text:'那家店的辣子鸡。',kind:'flit',strength:0.50},
+        {text:'底线清单第十四条写得潦草。',kind:'flit',strength:0.60}
+      ]
+    };
+  }
+  function renderDesireView(j){
+    var box=$('desire-body');box.innerHTML='';
+    var feel=document.createElement('div');
+    feel.className='feel-card';
+    feel.innerHTML='<div class="f-label">此刻 · 他心里的声音</div><div class="f-body">'+esc(j.feel||'…')+'</div>';
+    box.appendChild(feel);
+    var ic=document.createElement('div');
+    ic.className='intent-card';
+    ic.innerHTML='<span class="i-tag">最想做 · '+(j.action_label||'碎语')+'</span><div class="i-body">'+(j.intent&&j.intent.reason?esc(j.intent.reason):'')+'</div>';
+    box.appendChild(ic);
+    var sec=document.createElement('div');
+    sec.className='section-label';
+    sec.textContent='八维驱动条';
+    box.appendChild(sec);
+    var keys=['attachment','curiosity','reflection','duty','social','fatigue','libido','stress'];
+    var top=j.intent&&j.intent.drive_key;
+    keys.forEach(function(k){
+      var v=Math.round((j.drive&&j.drive[k]||0)*100);
+      var row=document.createElement('div');
+      row.className='drive-row';
+      row.innerHTML='<div class="d-top"><span>'+esc((j.labels&&j.labels[k])||k)+'</span><span class="d-val">'+v+'%</span></div><div class="drive-bar"><i class="'+(k===top?'hi':'')+'" style="width:'+v+'%"></i></div>';
+      box.appendChild(row);
+    });
+    var sec2=document.createElement('div');
+    sec2.className='section-label';
+    sec2.textContent='念头池 · '+(j.thoughts||[]).length+' 个（闪念↔执念）';
+    box.appendChild(sec2);
+    (j.thoughts||[]).forEach(function(t){
+      var el=document.createElement('div');
+      el.className='thought-item';
+      el.innerHTML='<span class="t-kind '+(t.kind==='fixation'?'fixation':'flit')+'">'+(t.kind==='fixation'?'执念':'闪念')+'</span><span class="t-text">'+esc(t.text)+'</span><span class="t-strength">'+(Math.round(t.strength*100))+'</span>';
+      box.appendChild(el);
+    });
+    if(!(j.thoughts||[]).length){
+      var em=document.createElement('div');
+      em.className='empty';
+      em.textContent='念头池是空的。';
+      box.appendChild(em);
+    }
+  }
+  $('desire-feed-btn').onclick=function(){
+    var v=$('desire-feed-input').value.trim();
+    if(!v)return;
+    if(API_BASE){
+      api('/api/desire/feed',{method:'POST',body:{text:v,drive:'attachment',kind:'flit',strength:0.6}}).then(function(){
+        $('desire-feed-input').value='';
+        toast('念头已投喂');
+        renderDesire();
+      }).catch(function(e){toast(e.message);});
+    }else{
+      $('desire-feed-input').value='';
+      toast('（本地模式）已投喂');
+    }
   };
 
   /* 世界书 */
