@@ -1,0 +1,17 @@
+name: push-trigger
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: shadow push
+        run: |
+          curl -sS -X POST \
+            -H "x-push-secret: ${{ secrets.PUSH_SECRET }}" \
+            -H "Cache-Control: no-store" \
+            https://home-backend-eetq.onrender.com/api/push/trigger
