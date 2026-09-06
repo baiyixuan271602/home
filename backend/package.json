@@ -1,7 +1,7 @@
 {
   "name": "home-backend",
   "version": "1.0.0",
-  "description": "home 后端服务：调用 DeepSeek 模型 + Supabase 存储",
+  "description": "home 后端服务：DeepSeek 模型 + Supabase Postgres 直连",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -12,6 +12,6 @@
   "dependencies": {
     "express": "^4.19.2",
     "cors": "^2.8.5",
-    "@supabase/supabase-js": "^2.45.0"
+    "pg": "^8.12.0"
   }
 }
