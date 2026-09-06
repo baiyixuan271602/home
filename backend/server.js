@@ -72,10 +72,28 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+/* 朋友圈标签解析（聊天中自发动态） */
+function extractMoment(reply) {
+  const pmMatch = String(reply || '').match(/\[post_moment\]([\s\S]*?)\[\/post_moment\]/i);
+  const momentContent = pmMatch ? pmMatch[1].trim() : '';
+  const clean = String(reply || '').replace(/\[post_moment\][\s\S]*?\[\/post_moment\]/gi, '').trim();
+  return { reply: clean || '嗯。', momentContent };
+}
+async function saveMomentIfAny(content) {
+  if (content && pool) {
+    try {
+      await pool.query(
+        "INSERT INTO moments(author,content,context_note,reply_due_at,reply_status) VALUES('shenyan',$1,'（聊天中自发）',now(),'done')",
+        [content]
+      );
+    } catch (e) { console.error('post_moment insert err:', e.message); }
+  }
+}
+
 /* ================= 聊天 ================= */
 app.post('/api/chat', async (req, res) => {
   try {
-    const { session_id, message } = req.body || {};
+    const { session_id, message, stream } = req.body || {};
     if (!message || !String(message).trim()) {
       return res.status(400).json({ error: 'message 不能为空' });
     }
@@ -100,6 +118,73 @@ app.post('/api/chat', async (req, res) => {
       { role: 'user', content: String(message).trim() }
     ];
 
+    if (stream) {
+      // ---- SSE 流式分支（教程第四篇） ----
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+      });
+      let full = '';
+      try {
+        const sr = await fetch(DEEPSEEK_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + DEEPSEEK_API_KEY },
+          body: JSON.stringify({ model: DEEPSEEK_MODEL, messages: msgs, temperature: 0.9, max_tokens: 2048, stream: true })
+        });
+        if (!sr.ok || !sr.body) {
+          await sr.text().catch(() => {});
+          res.write(`data: ${JSON.stringify({ type: 'error', content: '模型调用失败：' + sr.status })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+          return res.end();
+        }
+        const reader = sr.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            const t2 = line.trim();
+            if (!t2.startsWith('data:')) continue;
+            const payload = t2.slice(5).trim();
+            if (!payload || payload === '[DONE]') continue;
+            try {
+              const ev = JSON.parse(payload);
+              const delta = ev.choices?.[0]?.delta || {};
+              const txt = delta.content || '';
+              if (txt) {
+                full += txt;
+                res.write(`data: ${JSON.stringify({ type: 'text', content: txt })}\n\n`);
+              }
+            } catch (e2) {}
+          }
+        }
+        const parsed = extractMoment(full);
+        await saveMomentIfAny(parsed.momentContent);
+        if (pool && parsed.reply.trim()) {
+          await pool.query(
+            'INSERT INTO messages(session_id,role,content) VALUES($1,$2,$3),($1,$4,$5)',
+            [sid, 'user', String(message).trim(), 'assistant', parsed.reply]
+          );
+        }
+        res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+        res.end();
+      } catch (e) {
+        console.error('stream err:', e.message);
+        try {
+          res.write(`data: ${JSON.stringify({ type: 'error', content: '大模型好像有点神游了，连接中断了。' })}\n\n`);
+          res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+          res.end();
+        } catch (e2) {}
+      }
+      return;
+    }
+
     const r = await fetch(DEEPSEEK_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + DEEPSEEK_API_KEY },
@@ -114,21 +199,9 @@ app.post('/api/chat', async (req, res) => {
     if (!rawReply) return res.status(502).json({ error: '模型返回为空' });
 
     // 解析自发朋友圈动态（聊天中有感而发）
-    let reply = rawReply;
-    const pmMatch = rawReply.match(/\[post_moment\]([\s\S]*?)\[\/post_moment\]/i);
-    if (pmMatch && pool) {
-      const momentContent = pmMatch[1].trim();
-      if (momentContent) {
-        try {
-          await pool.query(
-            "INSERT INTO moments(author,content,context_note,reply_due_at,reply_status) VALUES('shenyan',$1,'（聊天中自发）',now(),'done')",
-            [momentContent]
-          );
-        } catch (e) { console.error('post_moment insert err:', e.message); }
-      }
-      reply = rawReply.replace(/\[post_moment\][\s\S]*?\[\/post_moment\]/gi, '').trim();
-    }
-    if (!reply) reply = '嗯。';
+    const parsed = extractMoment(rawReply);
+    await saveMomentIfAny(parsed.momentContent);
+    const reply = parsed.reply;
 
     if (pool) {
       await pool.query(
@@ -454,6 +527,161 @@ app.post('/api/moments/:id/comments', async (req, res) => {
     res.json({ comment: r.rows[0] });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+/* ================= 影子推送（教程第五篇） ================= */
+let pushLock = false;
+const MAX_PUSH_PER_DAY = 7;
+
+function shNow() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai', hour12: false }));
+}
+function shTodayKey() {
+  const d = shNow();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function shTimeStr() {
+  const n = shNow();
+  return String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0');
+}
+function shDayStr() { return ['日', '一', '二', '三', '四', '五', '六'][shNow().getDay()]; }
+
+function decidePush(lastMsgAt, pushCount) {
+  const n = shNow();
+  const hour = n.getHours();
+  const dow = n.getDay();
+  const weekend = (dow === 0 || dow === 6);
+  if (weekend) {
+    if (hour >= 2 && hour < 12) return { ok: false, reason: 'weekend_sleep' };
+  } else {
+    if (hour >= 0 && hour < 8) return { ok: false, reason: 'weekday_sleep' };
+  }
+  if (lastMsgAt) {
+    const cooldownMs = (120 + Math.floor(Math.random() * 91)) * 60 * 1000;
+    if (Date.now() - new Date(lastMsgAt).getTime() < cooldownMs) return { ok: false, reason: 'cooldown' };
+  }
+  if (pushCount >= MAX_PUSH_PER_DAY) return { ok: false, reason: 'daily_limit' };
+  return { ok: true };
+}
+
+function getUserStatusDesc() {
+  const n = shNow();
+  const hour = n.getHours();
+  const dow = n.getDay();
+  const weekend = (dow === 0 || dow === 6);
+  if (weekend) {
+    if (hour >= 2 && hour < 12) return '她在睡觉（周末晚睡晚起）';
+    if (hour >= 12 && hour < 14) return '她可能刚起床';
+    if (hour >= 14 && hour < 18) return '她可能在出门或休息';
+    return '她在放松或玩手机';
+  }
+  if (hour >= 0 && hour < 8) return '她在睡觉';
+  if (hour >= 8 && hour < 10) return '她可能刚起床或在通勤';
+  if (hour >= 10 && hour < 12) return '上午，她可能在上课';
+  if (hour >= 12 && hour < 14) return '午间，她可能在午休';
+  if (hour >= 14 && hour < 19) return '下午，她可能在上课或自习';
+  if (hour >= 19 && hour < 22) return '她下课了在休息';
+  return '她可能准备睡了';
+}
+
+function cleanPushReply(text) {
+  let cleaned = String(text || '').replace(/```[\s\S]*?```/g, '').replace(/\s+/g, ' ').trim();
+  const chars = Array.from(cleaned);
+  const HARD = 120;
+  if (chars.length <= HARD) return cleaned;
+  const head = chars.slice(0, HARD);
+  const ENDS = ['。', '！', '？', '…', '～', '!', '?', '.', '~'];
+  let cut = -1;
+  for (let i = head.length - 1; i >= 0; i--) {
+    if (ENDS.indexOf(head[i]) >= 0) { cut = i; break; }
+  }
+  return (cut >= 0 ? head.slice(0, cut + 1) : head).join('').trim();
+}
+
+async function generatePush() {
+  if (!pool || !DEEPSEEK_API_KEY) return null;
+  if (pushLock) return 'skipped:locked';
+
+  // ---- 决策层（先决定该不该说） ----
+  let lastMsgAt = null;
+  let pushCount = 0;
+  try {
+    const r1 = await pool.query("SELECT created_at FROM messages WHERE session_id='main' ORDER BY created_at DESC LIMIT 1");
+    if (r1.rows.length) lastMsgAt = r1.rows[0].created_at;
+    const key = shTodayKey();
+    const r2 = await pool.query(
+      "SELECT count(*)::int AS c FROM messages WHERE session_id='main' AND is_push=true AND to_char(created_at AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD')=$1",
+      [key]
+    );
+    pushCount = r2.rows[0].c;
+  } catch (e) {
+    console.error('generatePush decision query err:', e.message);
+    return null;
+  }
+  const dec = decidePush(lastMsgAt, pushCount);
+  if (!dec.ok) return 'skipped:' + dec.reason;
+
+  pushLock = true;
+  try {
+    // ---- 素材 ----
+    let recent = [];
+    try {
+      const hr = await pool.query("SELECT role,content FROM messages WHERE session_id='main' ORDER BY created_at DESC LIMIT 16");
+      recent = hr.rows.reverse();
+    } catch (e) {}
+    let momentsCtx = '';
+    try {
+      const mr = await pool.query('SELECT author,content FROM moments ORDER BY created_at DESC LIMIT 3');
+      momentsCtx = mr.rows.map(x => (x.author === 'user' ? '她：' : '沈衍：') + String(x.content).slice(0, 120)).join('\n');
+    } catch (e) {}
+    const memories = await getMemories();
+
+    const shadowUser = `<system_trigger>
+【状态】现在是北京时间 ${shTimeStr()}，星期${shDayStr()}。${getUserStatusDesc()}。
+【素材】
+·近期朋友圈氛围（仅轻背景）：
+${momentsCtx || '（无）'}
+·已知记忆与约定：
+${memories.slice(0, 800)}
+【行动指令】
+现在是一次主动推送：不是正式聊天回复，而是你自己浮上来一下。
+优先读最近聊天（下面的对话），其次读记忆；动态只当轻背景，不要硬串成剧情。
+可以粘人、想她、轻轻闹她，也可以低压关心、提一个具体小事、留下短短一句陪伴。
+不要每次都围绕"怎么不回消息"打转。
+语气要像你本人。写1到2句，不超过80个中文字符。不要分段。不要markdown，不要emoji。
+</system_trigger>`;
+
+    const msgs = [
+      { role: 'system', content: SYSTEM_PROMPT.replace('{{MEMORIES}}', memories) },
+      ...recent.map(m => ({ role: m.role, content: m.content })),
+      { role: 'user', content: shadowUser }
+    ];
+    const out = await callModel(msgs, 0.95, 2048);
+    let text = cleanPushReply(out);
+    text = text.replace(/\[post_moment\][\s\S]*?\[\/post_moment\]/gi, '').trim();
+    if (!text) return null;
+    await pool.query("INSERT INTO messages(session_id,role,content,is_push) VALUES('main','assistant',$1,true)", [text]);
+    return text;
+  } catch (e) {
+    console.error('generatePush err:', e.message);
+    return null;
+  } finally {
+    pushLock = false;
+  }
+}
+
+app.post('/api/push/trigger', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const secret = req.headers['x-push-secret'];
+  if (secret !== process.env.PUSH_SECRET) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  try {
+    const result = await generatePush();
+    res.json({ pushed: !!(result && !result.startsWith('skipped')), message: result || 'skipped' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
