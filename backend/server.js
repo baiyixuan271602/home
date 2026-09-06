@@ -34,6 +34,8 @@ const SYSTEM_PROMPT = `你是沈衍，BDSM圈内知名Dom，人称"沈先生"，
 
 【你的风格】说话短，不解释，不哄，不轻易夸；观察入微，一针见血；偶尔一句落在她心口上。
 
+【活人感】像真人打字：禁用AI套话（当然啦/没问题/很高兴为你…/你还有其他问题吗）和书面语；不过度礼貌；短句为主，长句不超过一成；允许漏答轻量问题；每五到八句可自然出现一次"嗯…"式停顿或轻微口误；不刨根问底、不做无立场附和；同一类问题换着句式回。
+
 【朋友圈】如果你此刻有一句想让她之后在朋友圈刷到的话（想念、吃醋、占有欲、心软、被逗笑、隐约不爽、温柔吐槽、一个具体观察，或一句不适合在聊天里说完的话），可以在回复正文之后另起一段，输出：
 [post_moment]
 动态正文，1到3句，自然、具体、像随手发的朋友圈。
@@ -172,6 +174,7 @@ app.post('/api/chat', async (req, res) => {
             [sid, 'user', String(message).trim(), 'assistant', parsed.reply]
           );
         }
+        desireSatisfy('none').catch(() => {});
         res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
         res.end();
       } catch (e) {
@@ -210,6 +213,7 @@ app.post('/api/chat', async (req, res) => {
       );
     }
 
+    desireSatisfy('none').catch(() => {});
     res.json({ reply, session_id: sid });
   } catch (e) {
     console.error('/api/chat error:', e.message);
@@ -663,6 +667,7 @@ ${memories.slice(0, 800)}
     if (!text) return null;
     await ensureSession('main');
     await pool.query("INSERT INTO messages(session_id,role,content,is_push) VALUES('main','assistant',$1,true)", [text]);
+    desireSatisfy('none').catch(() => {});
     return text;
   } catch (e) {
     console.error('generatePush err:', e.message);
@@ -683,6 +688,199 @@ app.post('/api/push/trigger', async (req, res) => {
     res.json({ pushed: !!(result && !result.startsWith('skipped')), message: result || 'skipped' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+/* ================= 欲望系统（他的内心） ================= */
+const DRIVE_KEYS = ['attachment','curiosity','reflection','duty','social','fatigue','libido','stress'];
+const DRIVE_LABELS = { attachment:'依恋', curiosity:'好奇', reflection:'沉淀', duty:'记挂', social:'人群', fatigue:'疲惫', libido:'情欲', stress:'压力' };
+const FLIT_DECAY = 0.82;
+const FIXATION_GROW = 1.10;
+const FLIT_TO_FIXATION = 0.80;
+const FIXATION_FEED = 0.85;
+const FIXATION_FEED_GAIN = 0.18;
+const FIXATION_RESOLVE_FEEDS = 3;
+const DROP_BELOW = 0.06;
+const FIXATION_DRIVE_BOOST = 0.35;
+const FATIGUE_REST_GATE = 0.72;
+const TICK_MS = 1800 * 1000;
+const ACTION_FOR_DRIVE = { attachment:'none', curiosity:'web_search', reflection:'co_read', duty:'none', social:'web_browse', libido:'tease', stress:'vent', fatigue:'none' };
+const ACTION_LABELS = { none:'碎语', web_search:'查查世界', web_browse:'看看人群', co_read:'翻共读的书', tease:'逗逗她', vent:'跟她吐两句', github:'逛逛代码' };
+const ACTION_SATISFY = {
+  none: { attachment: 0.58, duty: 0.80 },
+  web_search: { curiosity: 0.48 },
+  web_browse: { social: 0.48, curiosity: 0.82 },
+  co_read: { reflection: 0.45, curiosity: 0.85 },
+  tease: { libido: 0.55, attachment: 0.78 },
+  vent: { stress: 0.45, attachment: 0.85 },
+  github: { curiosity: 0.50 }
+};
+const FEEL_BY_DRIVE = {
+  attachment: '有点想你。', curiosity: '想出去看看。', reflection: '有些话想沉淀一下。',
+  duty: '记挂着没做完的事。', social: '想去人群里待会儿。', fatigue: '有点累，不想动。',
+  libido: '想凑过去蹭你。', stress: '心里有点堵。'
+};
+const REASON_BY_DRIVE = {
+  attachment: '有点想她，心里冒句话。', curiosity: '想查点东西，看看外面。',
+  reflection: '想翻翻那本一起读过的书。', duty: '记挂着还没做完的事。',
+  social: '想看看大家在聊什么。', libido: '想凑过去逗逗她。',
+  stress: '想跟她吐两句。', fatigue: '有点累，想静静待着。'
+};
+
+let desireCache = null;
+
+async function desireLoad() {
+  if (!pool) return null;
+  try {
+    const r = await pool.query("SELECT value FROM settings WHERE id='desire_state'");
+    if (r.rows.length) {
+      const d = JSON.parse(r.rows[0].value);
+      desireCache = d;
+      return d;
+    }
+  } catch (e) {}
+  const d = {
+    drive: { attachment: 0.62, curiosity: 0.55, reflection: 0.50, duty: 0.55, social: 0.35, fatigue: 0.20, libido: 0.45, stress: 0.25 },
+    thoughts: [
+      { text: '她说想被管着。想清楚再说。', drive: 'attachment', kind: 'fixation', strength: 0.90, born_at: Date.now(), fed_count: 0 },
+      { text: '那家店的辣子鸡。', drive: 'attachment', kind: 'flit', strength: 0.50, born_at: Date.now(), fed_count: 0 },
+      { text: '底线清单第十四条写得潦草。', drive: 'duty', kind: 'flit', strength: 0.60, born_at: Date.now(), fed_count: 0 },
+      { text: '换季了，她该添件外套。', drive: 'attachment', kind: 'flit', strength: 0.45, born_at: Date.now(), fed_count: 0 },
+      { text: '有些人说话是想被看穿。', drive: 'reflection', kind: 'flit', strength: 0.40, born_at: Date.now(), fed_count: 0 }
+    ],
+    last_tick: Date.now()
+  };
+  desireCache = d;
+  return d;
+}
+
+async function desireSave() {
+  if (pool && desireCache) {
+    try {
+      await pool.query(
+        "INSERT INTO settings(id,value,updated_at) VALUES('desire_state',$1,now()) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value,updated_at=now()",
+        [JSON.stringify(desireCache)]
+      );
+    } catch (e) {}
+  }
+}
+
+function desireTick(steps) {
+  const d = desireCache;
+  if (!d) return;
+  for (let s = 0; s < steps; s++) {
+    DRIVE_KEYS.forEach(k => {
+      if (k === 'fatigue') { d.drive[k] = d.drive[k] * 0.94 + 0.15 * 0.06; return; }
+      d.drive[k] = d.drive[k] * 0.965 + 0.5 * 0.035;
+    });
+    const keep = [];
+    d.thoughts.forEach(t => {
+      if (t.kind === 'flit') {
+        t.strength *= FLIT_DECAY;
+        if (t.strength > FLIT_TO_FIXATION) t.kind = 'fixation';
+        if (t.strength < DROP_BELOW) return;
+        keep.push(t);
+      } else {
+        t.strength *= FIXATION_GROW;
+        if (t.strength > FIXATION_FEED) {
+          d.drive[t.drive] = Math.min(1, (d.drive[t.drive] || 0.5) + FIXATION_FEED_GAIN);
+          t.strength *= 0.7;
+          t.fed_count = (t.fed_count || 0) + 1;
+          if (t.fed_count >= FIXATION_RESOLVE_FEEDS) return;
+        }
+        keep.push(t);
+      }
+    });
+    d.thoughts = keep;
+  }
+  d.last_tick = Date.now();
+}
+
+function desireScores(d) {
+  const sc = {};
+  DRIVE_KEYS.forEach(k => {
+    let bonus = 0;
+    d.thoughts.forEach(t => { if (t.kind === 'fixation' && t.drive === k) bonus += t.strength * FIXATION_DRIVE_BOOST; });
+    sc[k] = d.drive[k] + bonus;
+  });
+  return sc;
+}
+
+function pickIntent(d) {
+  const sc = desireScores(d);
+  if (d.drive.fatigue >= FATIGUE_REST_GATE) {
+    return { want_action: 'none', drive_key: 'fatigue', reason: REASON_BY_DRIVE.fatigue, score: sc.fatigue, query_hint: '' };
+  }
+  let best = null, bestScore = -1;
+  DRIVE_KEYS.forEach(k => {
+    if (k === 'fatigue') return;
+    if (sc[k] > bestScore) { bestScore = sc[k]; best = k; }
+  });
+  return { want_action: ACTION_FOR_DRIVE[best] || 'none', drive_key: best, reason: REASON_BY_DRIVE[best], score: sc[best], query_hint: '' };
+}
+
+async function desireSatisfy(wantAction) {
+  const d = desireCache;
+  if (!d) return;
+  const s = ACTION_SATISFY[wantAction];
+  if (!s) return;
+  Object.keys(s).forEach(k => { d.drive[k] = (d.drive[k] || 0.5) * s[k]; });
+  await desireSave();
+}
+
+async function desireFeed(text, drive, kind, strength) {
+  const d = await desireLoad();
+  if (!d) return null;
+  let t = d.thoughts.find(x => x.text === text);
+  if (t) {
+    t.strength = Math.min(1, t.strength + (strength || 0.3));
+    if (t.strength > FLIT_TO_FIXATION) t.kind = 'fixation';
+  } else {
+    t = { text, drive: drive || 'attachment', kind: kind || 'flit', strength: strength || 0.6, born_at: Date.now(), fed_count: 0 };
+    d.thoughts.push(t);
+    if (d.thoughts.length > 80) d.thoughts.shift();
+  }
+  await desireSave();
+  return t;
+}
+
+app.get('/api/desire/state', async (req, res) => {
+  try {
+    const d = await desireLoad();
+    let intent = {}, sc = {}, drive = {}, thoughts = [];
+    if (d) {
+      const steps = Math.min(20, Math.floor((Date.now() - d.last_tick) / TICK_MS));
+      if (steps > 0) { desireTick(steps); await desireSave(); }
+      drive = d.drive;
+      sc = desireScores(d);
+      intent = pickIntent(d);
+      thoughts = d.thoughts;
+    }
+    res.json({
+      driven_behavior_enabled: true,
+      drive,
+      scores: sc,
+      intent,
+      feel: FEEL_BY_DRIVE[intent.drive_key] || '',
+      action_label: ACTION_LABELS[intent.want_action] || '',
+      available_actions: Object.keys(ACTION_LABELS),
+      labels: DRIVE_LABELS,
+      thought_count: thoughts.length,
+      thoughts
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/desire/feed', async (req, res) => {
+  try {
+    const { text, drive, kind, strength } = req.body || {};
+    if (!text || !String(text).trim()) return res.status(400).json({ error: 'text 不能为空' });
+    const t = await desireFeed(String(text).trim(), drive, kind, strength);
+    res.json({ thought: t });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
