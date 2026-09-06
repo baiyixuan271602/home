@@ -83,6 +83,8 @@
   .msg.mine{align-self:flex-end;align-items:flex-end;}
   .msg.his{align-self:flex-start;align-items:flex-start;}
   .bubble{padding:11px 15px;border-radius:20px;font-size:15px;line-height:1.55;word-break:break-word;white-space:pre-wrap;}
+  .bubble.streaming::after{content:"▍";color:var(--accent);animation:caretBlink .9s infinite;}
+  @keyframes caretBlink{0%,49%{opacity:1}50%,100%{opacity:0}}
   .msg.mine .bubble{background:var(--bubble-mine);color:var(--text);border-bottom-right-radius:6px;box-shadow:0 2px 8px rgba(60,50,30,.07);}
   .msg.his .bubble{background:var(--bubble-his);color:var(--text);border-bottom-left-radius:6px;box-shadow:0 2px 8px rgba(60,50,30,.05);}
   .msg .time{font-size:10.5px;color:#B9B09F;margin-top:5px;padding:0 4px;}
@@ -837,16 +839,66 @@
       }
     }).catch(function(){});
   }
+  function addWxStreamingBubble(){
+    var m=document.createElement('div');
+    m.className='msg his';
+    var b=document.createElement('div');
+    b.className='bubble streaming';
+    var t=document.createElement('div');
+    t.className='time';
+    t.textContent=new Date().toTimeString().slice(0,5);
+    m.appendChild(b);m.appendChild(t);
+    $('wx-msgs').appendChild(m);
+    $('wx-msgs').scrollTop=1e6;
+    return b;
+  }
+  function scrollWx(){var c=$('wx-msgs');c.scrollTop=1e6;}
   $('wx-send').onclick=function(){
     var v=$('wx-input').value.trim();if(!v||wxBusy)return;
     addWxMsg(v,true);$('wx-input').value='';
     if(!API_BASE){setTimeout(wxLocalReply,700);return;}
     wxBusy=true;
-    api('/api/chat',{method:'POST',body:{session_id:'main',message:v}}).then(function(j){
-      if(j.reply)addWxMsg(j.reply,false);else wxLocalReply();
+    var bubble=addWxStreamingBubble();
+    fetch(API_BASE+'/api/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({session_id:'main',message:v,stream:true})
+    }).then(function(resp){
+      if(!resp.ok||!resp.body)throw new Error('HTTP '+resp.status);
+      var reader=resp.body.getReader();
+      var decoder=new TextDecoder();
+      var buf='',full='';
+      function pump(){
+        return reader.read().then(function(res){
+          if(res.done){
+            bubble.classList.remove('streaming');
+            if(!full){bubble.textContent='（没有收到回复）';}
+            $('cell-sub').textContent=(full||'（空）').slice(0,20);
+            wxBusy=false;
+            return;
+          }
+          buf+=decoder.decode(res.value,{stream:true});
+          var lines=buf.split('\n');buf=lines.pop();
+          lines.forEach(function(line){
+            var t2=line.trim();
+            if(!t2.startsWith('data:'))return;
+            var payload=t2.slice(5).trim();
+            if(!payload)return;
+            try{
+              var ev=JSON.parse(payload);
+              if(ev.type==='text'){full+=ev.content;bubble.textContent=full;scrollWx();}
+              else if(ev.type==='error'){full=ev.content;bubble.textContent=ev.content;}
+            }catch(e2){}
+          });
+          return pump();
+        });
+      }
+      return pump();
     }).catch(function(e){
-      addWxMsg('（服务器没连上：'+e.message+'）',false);
-    }).then(function(){wxBusy=false;});
+      bubble.classList.remove('streaming');
+      bubble.textContent='（服务器没连上：'+e.message+'）';
+      wxBusy=false;
+    });
   };
   $('wx-plus').onclick=function(){$('plus-panel').classList.toggle('open');};
   document.querySelectorAll('[data-plus]').forEach(function(b){
