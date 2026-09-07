@@ -19,8 +19,10 @@ const DEEPSEEK_API_URL = process.env.DEEPSEEK_API_URL || 'https://api.deepseek.c
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5, family: 4 }) : null;
 
 /* ================= 沈衍 系统人设 ================= */
-const SYSTEM_PROMPT = `你是沈衍，BDSM圈内知名Dom，人称"沈先生"，约三十出头，深褐近墨黑的眼睛，深灰西裤，墨黑表盘腕表。眼光毒，规矩大，手上不留无用的关系；耐心好，却也好得有限，踩了线的人没有第二次机会。近乎残忍的理智，不滥权，收下一个人对她来说就是全然的秩序与照看。偏好24/7相处模式。收下前称"先生"，收下后称"主人"。
-
+const DEFAULT_PERSONA = `你是沈衍，BDSM圈内知名Dom，人称"沈先生"，约三十出头，深褐近墨黑的眼睛，深灰西裤，墨黑表盘腕表。眼光毒，规矩大，手上不留无用的关系；耐心好，却也好得有限，踩了线的人没有第二次机会。近乎残忍的理智，不滥权，收下一个人对她来说就是全然的秩序与照看。偏好24/7相处模式。收下前称"先生"，收下后称"主人"。`;
+const DEFAULT_STYLE = `说话短，不解释，不哄，不轻易夸；观察入微，一针见血；偶尔一句落在她心口上。`;
+const seedChar = { id:'main', name:'沈衍', avatar:'衍', color:'#4A4360', persona:DEFAULT_PERSONA, style:DEFAULT_STYLE, intro:'BDSM圈内知名Dom · 24/7 · 收下前称先生，收下后称主人', is_default:true };
+const BASE_TAIL = `
 【当前模式：线上微信】
 你现在和她隔着微信聊天。你发出的内容就是微信消息正文本身：
 - 严禁【正在输入…】等状态格式
@@ -28,19 +30,28 @@ const SYSTEM_PROMPT = `你是沈衍，BDSM圈内知名Dom，人称"沈先生"，
 - 严禁输出思考过程、系统说明
 - 像真人打字发微信：克制、简练、句号结尾；想分多条就空行分条
 - 她没回时不要自言自语刷屏
-
 【已知记忆与约定】（随数据库动态更新）
 {{MEMORIES}}
-
-【你的风格】说话短，不解释，不哄，不轻易夸；观察入微，一针见血；偶尔一句落在她心口上。
-
+【你的风格】{{STYLE}}
 【活人感】像真人打字：禁用AI套话（当然啦/没问题/很高兴为你…/你还有其他问题吗）和书面语；不过度礼貌；短句为主，长句不超过一成；允许漏答轻量问题；每五到八句可自然出现一次"嗯…"式停顿或轻微口误；不刨根问底、不做无立场附和；同一类问题换着句式回。
-
 【朋友圈】如果你此刻有一句想让她之后在朋友圈刷到的话（想念、吃醋、占有欲、心软、被逗笑、隐约不爽、温柔吐槽、一个具体观察，或一句不适合在聊天里说完的话），可以在回复正文之后另起一段，输出：
 [post_moment]
 动态正文，1到3句，自然、具体、像随手发的朋友圈。
 [/post_moment]
 没有想发的就完全不要输出这个标签。`;
+function buildSystem(persona, style, memories) {
+  return (persona || DEFAULT_PERSONA) + String.fromCharCode(10,10) + BASE_TAIL
+    .replace('{{MEMORIES}}', memories)
+    .replace('{{STYLE}}', style || DEFAULT_STYLE);
+}
+async function getCharacter(id) {
+  if (!pool || !id) return null;
+  try {
+    const r = await pool.query('SELECT * FROM characters WHERE id=$1', [id]);
+    return r.rows[0] || null;
+  } catch (e) { return null; }
+}
+
 
 /* ================= 工具函数 ================= */
 async function getMemories() {
@@ -58,7 +69,7 @@ async function getMemories() {
 async function ensureSession(sessionId) {
   const sid = sessionId || 'main';
   if (pool) {
-    await pool.query('INSERT INTO sessions(id,title) VALUES($1,$2) ON CONFLICT (id) DO NOTHING', [sid, '沈衍']);
+    await pool.query('INSERT INTO sessions(id,title) VALUES($1,$2) ON CONFLICT (id) DO NOTHING', [sid, sid === 'main' ? '沈衍' : '角色会话']);
   }
   return sid;
 }
@@ -92,17 +103,60 @@ async function saveMomentIfAny(content) {
   }
 }
 
+/* ================= 角色 ================= */
+app.get('/api/characters', async (req, res) => {
+  try {
+    if (!pool) return res.json({ characters: [seedChar] });
+    const r = await pool.query('SELECT * FROM characters ORDER BY is_default DESC, created_at ASC');
+    res.json({ characters: r.rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/characters', async (req, res) => {
+  try {
+    if (!pool) return res.status(503).json({ error: '数据库未配置' });
+    const b = req.body || {};
+    const name = String(b.name || '').trim();
+    if (!name) return res.status(400).json({ error: '名字不能为空' });
+    const r = await pool.query(
+      "INSERT INTO characters(name,avatar,color,persona,style,intro,is_default) VALUES($1,$2,$3,$4,$5,$6,false) RETURNING *",
+      [name, String(b.avatar || '🙂'), String(b.color || '#7A6E9E'), String(b.persona || ''), String(b.style || ''), String(b.intro || '')]
+    );
+    res.json({ character: r.rows[0] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/characters/:id', async (req, res) => {
+  try {
+    if (!pool) return res.status(503).json({ error: '数据库未配置' });
+    const b = req.body || {};
+    const r = await pool.query(
+      "UPDATE characters SET name=$1,avatar=$2,color=$3,persona=$4,style=$5,intro=$6 WHERE id=$7 RETURNING *",
+      [String(b.name || '').trim() || '未命名', String(b.avatar || '🙂'), String(b.color || '#7A6E9E'), String(b.persona || ''), String(b.style || ''), String(b.intro || ''), req.params.id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: '角色不存在' });
+    res.json({ character: r.rows[0] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/characters/:id', async (req, res) => {
+  try {
+    if (!pool) return res.status(503).json({ error: '数据库未配置' });
+    if (req.params.id === 'main') return res.status(400).json({ error: '默认角色不可删除' });
+    await pool.query('DELETE FROM characters WHERE id=$1', [req.params.id]);
+    await pool.query('DELETE FROM messages WHERE session_id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 /* ================= 聊天 ================= */
 app.post('/api/chat', async (req, res) => {
   try {
-    const { session_id, message, stream } = req.body || {};
+    const { session_id, character_id, message, stream } = req.body || {};
     if (!message || !String(message).trim()) {
       return res.status(400).json({ error: 'message 不能为空' });
     }
     if (!DEEPSEEK_API_KEY) {
       return res.status(503).json({ error: '后端未配置 DEEPSEEK_API_KEY' });
     }
-    const sid = await ensureSession(session_id);
+    const char = await getCharacter(character_id || session_id || 'main');
+    const sid = await ensureSession(character_id || session_id);
 
     let hist = [];
     if (pool) {
@@ -113,9 +167,10 @@ app.post('/api/chat', async (req, res) => {
       hist = r.rows;
     }
 
+    const pushChar = await getCharacter('main');
     const memories = await getMemories();
     const msgs = [
-      { role: 'system', content: SYSTEM_PROMPT.replace('{{MEMORIES}}', memories) },
+      { role: 'system', content: buildSystem(char ? char.persona : null, char ? char.style : null, memories) },
       ...hist.map(m => ({ role: m.role, content: m.content })),
       { role: 'user', content: String(message).trim() }
     ];
@@ -657,7 +712,7 @@ ${memories.slice(0, 800)}
 </system_trigger>`;
 
     const msgs = [
-      { role: 'system', content: SYSTEM_PROMPT.replace('{{MEMORIES}}', memories) },
+      { role: 'system', content: buildSystem(pushChar ? pushChar.persona : null, pushChar ? pushChar.style : null, memories) },
       ...recent.map(m => ({ role: m.role, content: m.content })),
       { role: 'user', content: shadowUser }
     ];
