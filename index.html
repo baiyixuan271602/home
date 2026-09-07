@@ -323,6 +323,22 @@
   .toast{position:fixed;left:50%;bottom:18%;transform:translateX(-50%) translateY(20px);background:rgba(60,55,45,.92);color:#FBF7EE;font-size:13.5px;padding:12px 20px;border-radius:14px;z-index:80;opacity:0;pointer-events:none;transition:.3s;max-width:80%;text-align:center;line-height:1.7;}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
   .set-row{display:flex;align-items:center;gap:10px;padding:15px 18px;background:var(--card);border-bottom:1px solid var(--line);}
+  .mcp-list{flex:1;overflow-y:auto;padding:14px 16px 24px;-webkit-overflow-scrolling:touch;}
+  .mcp-item{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 2px 10px rgba(60,50,30,.05);cursor:pointer;}
+  .mcp-item:active{transform:scale(.985);}
+  .mcp-ico{width:46px;height:46px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;flex:none;}
+  .mcp-info{flex:1;min-width:0;}
+  .mcp-name{font-size:15.5px;font-weight:600;color:var(--text);}
+  .mcp-desc{font-size:12px;color:var(--text-sub);margin-top:3px;line-height:1.5;}
+  .mcp-url{font-size:10.5px;color:#A79F8C;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .mcp-st{flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;}
+  .mcp-dot{width:10px;height:10px;border-radius:50%;background:#C9BFA9;}
+  .mcp-dot.on{background:#6FA96F;box-shadow:0 0 6px rgba(111,169,111,.6);}
+  .mcp-dot.off{background:#C96F6F;}
+  .mcp-dot.checking{background:#D8B45A;animation:blink 1s infinite;}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+  .mcp-st span{font-size:10px;color:var(--text-sub);}
+  .mcp-hint{font-size:12px;color:var(--text-sub);padding:2px 4px 10px;line-height:1.6;}
   .set-row .s-label{flex:1;font-size:14.5px;color:var(--text);}
   .set-row input{border:none;outline:none;background:#F7F3E8;border-radius:10px;padding:8px 12px;font-size:14px;width:120px;text-align:center;color:var(--text);user-select:text;}
   .set-row .s-value{font-size:13px;color:var(--text-sub);}
@@ -599,6 +615,24 @@
   </div>
 </div>
 
+<!-- MCP -->
+<div class="app-page" id="mcp">
+  <div class="page-head"><button class="back-btn" data-back>‹</button><span class="page-title">MCP</span></div>
+  <div class="mcp-hint" style="padding:10px 18px 0">已连接的 MCP 服务。点条目查看详情、复制地址；圆点表示实时状态。</div>
+  <div class="mcp-list" id="mcp-list"></div>
+</div>
+<div class="modal" id="mcp-modal">
+  <div class="modal-card">
+    <h3 id="mcp-md-name">MCP</h3>
+    <div class="mcp-desc" id="mcp-md-desc" style="margin:8px 0 12px"></div>
+    <div style="background:#F7F3E8;border-radius:10px;padding:10px 12px;font-size:11px;color:#8A8272;word-break:break-all;user-select:text;" id="mcp-md-url"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="m-btn" id="mcp-md-copy">复制地址</button>
+      <button class="m-btn" id="mcp-md-check">检测状态</button>
+      <button class="m-btn danger" id="mcp-md-close">关闭</button>
+    </div>
+  </div>
+</div>
 <div class="modal" id="mem-modal">
   <div class="modal-card">
     <h3 id="mem-modal-title">编辑记忆</h3>
@@ -750,6 +784,7 @@
     {id:'worldbook',n:'世界书',i:'📖',c:'#7E97B8'},
     {id:'desire',n:'他的内心',i:'💜',c:'#C08EA0'},
     {id:'archive',n:'档案',i:'🗂',c:'#C9C2B2'},
+    {id:'mcp',n:'MCP',i:'🔌',c:'#7FA0C8'},
     {id:'settings',n:'设置',i:'⚙️',c:'#D8D2C2'}
   ];
   apps.forEach(function(a){
@@ -770,6 +805,7 @@
     if(id==='wechat')loadHistory();
     if(id==='moments')renderMoments();
     if(id==='desire')renderDesire();
+    if(id==='mcp')renderMcp();
     p.classList.add('open');
   }
   document.querySelectorAll('[data-back]').forEach(function(b){
@@ -1665,6 +1701,76 @@
     $('wb-modal').classList.remove('open');
   };
 
+  /* MCP 服务列表 */
+  var MCPS=[
+    {id:'spicy',icon:'🎲',name:'涩涩大富翁',desc:'18+ 双人棋盘游戏 · 900+ 任务库 · 安全词/红线过滤内置',url:'https://spicy-monopoly-mcp.onrender.com/mcp',color:'#F0D8D0'}
+    /* 以后连接新的 MCP：在这里加一条 {id,icon,name,desc,url,color} */
+  ];
+  var mcpCur=null;
+  function renderMcp(){
+    var list=$('mcp-list');
+    list.innerHTML='';
+    MCPS.forEach(function(m){
+      var d=document.createElement('div');
+      d.className='mcp-item';
+      d.innerHTML='<div class="mcp-ico" style="background:'+m.color+'">'+m.icon+'</div>'+
+        '<div class="mcp-info"><div class="mcp-name">'+m.name+'</div>'+
+        '<div class="mcp-desc">'+m.desc+'</div>'+
+        '<div class="mcp-url">'+m.url+'</div></div>'+
+        '<div class="mcp-st"><div class="mcp-dot" id="mcp-dot-'+m.id+'"></div><span id="mcp-txt-'+m.id+'"></span></div>';
+      list.appendChild(d);
+      d.onclick=function(){openMcpModal(m);};
+      checkMcp(m);
+    });
+  }
+  function checkMcp(m){
+    var dot=$('mcp-dot-'+m.id),txt=$('mcp-txt-'+m.id);
+    if(!dot)return;
+    dot.className='mcp-dot checking';txt.textContent='检测中';
+    try{
+      fetch(m.url,{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Accept':'application/json, text/event-stream'},
+        body:JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'home',version:'1.0'}}})
+      }).then(function(r){
+        if(r.ok){dot.className='mcp-dot on';txt.textContent='在线';}
+        else{throw 0;}
+      }).catch(function(){
+        dot.className='mcp-dot off';txt.textContent='离线';
+      });
+    }catch(e){
+      dot.className='mcp-dot off';txt.textContent='离线';
+    }
+  }
+  function openMcpModal(m){
+    mcpCur=m;
+    $('mcp-md-name').textContent=m.icon+' '+m.name;
+    $('mcp-md-desc').textContent=m.desc;
+    $('mcp-md-url').textContent=m.url;
+    $('mcp-modal').classList.add('open');
+  }
+  function copyText(txt,done){
+    var ta=document.createElement('textarea');
+    ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();
+    var ok=false;
+    try{ok=document.execCommand('copy');}catch(e){ok=false;}
+    document.body.removeChild(ta);
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(function(){toast('地址已复制 ✓');},function(){ok?toast('地址已复制 ✓'):toast('复制失败，请长按手动复制');});
+    }else{
+      ok?toast('地址已复制 ✓'):toast('复制失败，请长按手动复制');
+    }
+  }
+  $('mcp-md-copy').onclick=function(){if(mcpCur)copyText(mcpCur.url);};
+  $('mcp-md-check').onclick=function(){
+    if(!mcpCur)return;
+    toast('正在检测 '+mcpCur.name+'…');
+    checkMcp(mcpCur);
+    var dot=$('mcp-dot-'+mcpCur.id);
+    if(dot)dot.className='mcp-dot checking';
+  };
+  $('mcp-md-close').onclick=function(){$('mcp-modal').classList.remove('open');};
   /* 设置 */
   $('set-pwd').onchange=function(){
     var v=this.value.trim();
