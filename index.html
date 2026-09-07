@@ -52,16 +52,21 @@
   .cd-widget .cd-num span{font-size:11px;color:var(--text-sub);display:block;}
   .apps{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:20px 6px;padding:16px 22px 22px;align-content:start;}
   .app{display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;background:none;border:none;}
-  .app .icon{width:56px;height:56px;border-radius:17px;display:flex;align-items:center;justify-content:center;font-size:26px;box-shadow:0 4px 10px rgba(60,50,30,.10);}
+  .app .icon{width:58px;height:58px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:27px;position:relative;overflow:hidden;box-shadow:0 6px 16px rgba(60,50,30,.16),inset 0 1px 0 rgba(255,255,255,.45),inset 0 -3px 6px rgba(0,0,0,.10);}
+  .app .icon .ie{position:relative;z-index:1;text-shadow:0 2px 3px rgba(0,0,0,.14);}
+  .app .icon::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.38),rgba(255,255,255,0) 52%);}
+  .app .icon::after{content:'';position:absolute;left:12%;right:12%;top:5%;height:34%;border-radius:50%;background:radial-gradient(ellipse at top,rgba(255,255,255,.55),transparent 68%);}
   .app .name{font-size:11.5px;color:var(--text);}
   .app:active .icon{transform:scale(.92);}
   .dock{margin:8px 20px calc(16px + env(safe-area-inset-bottom));background:rgba(255,255,255,.7);border-radius:24px;display:flex;justify-content:space-around;padding:12px 8px;backdrop-filter:blur(10px);box-shadow:0 2px 12px rgba(60,50,30,.05);}
-  .dock .app .icon{width:48px;height:48px;font-size:22px;border-radius:14px;}
+  .dock .app .icon{width:50px;height:50px;font-size:23px;border-radius:15px;}
 
   /* ===== 应用页通用 ===== */
   .app-page{position:fixed;inset:0;background:var(--bg);z-index:20;display:none;flex-direction:column;}
   .app-page.open{display:flex;}
-  .page-head{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--bg);}
+  .page-head{position:relative;display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--bg);}
+  .page-head .page-title{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:16px;font-weight:600;}
+  .head-add{margin-left:auto;border:none;background:none;font-size:22px;color:var(--text);padding:0 4px;}
   .back-btn{width:32px;height:32px;border:none;background:transparent;font-size:20px;color:var(--accent);border-radius:10px;}
   .back-btn:active{background:var(--line);}
   .page-title{font-size:17px;font-weight:600;color:var(--text);}
@@ -379,20 +384,14 @@
 
 <!-- 微信 -->
 <div class="app-page" id="wechat">
-  <div class="page-head"><button class="back-btn" data-back>‹</button><span class="page-title">微信</span></div>
+  <div class="page-head"><button class="back-btn" data-back>‹</button><span class="page-title">微信</span><button class="head-add" id="wx-add">＋</button></div>
   <div class="tabs">
     <button class="tab on" data-wxtab="list">微信</button>
     <button class="tab" data-wxtab="contacts">通讯录</button>
     <button class="tab" data-wxtab="find">发现</button>
     <button class="tab" data-wxtab="me">我</button>
   </div>
-  <div class="page-body" id="wx-list">
-    <div class="cell" id="cell-yan">
-      <div class="c-icon">衍</div>
-      <div class="c-main"><div class="c-title">沈衍</div><div class="c-sub" id="cell-sub">知道了。这一周，好好生活。</div></div>
-      <div class="c-time">21:40</div>
-    </div>
-  </div>
+  <div class="page-body" id="wx-list"></div>
   <div class="page-body" id="wx-contacts" style="display:none">
     <div class="cell"><div class="c-icon">衍</div><div class="c-main"><div class="c-title">沈衍</div><div class="c-sub">先生 · 主人</div></div></div>
   </div>
@@ -412,7 +411,7 @@
 
 <!-- 微信聊天 -->
 <div class="app-page" id="wx-chat">
-  <div class="page-head"><button class="back-btn" id="wx-chat-back">‹</button><span class="page-title">沈衍</span></div>
+  <div class="page-head"><button class="back-btn" id="wx-chat-back">‹</button><span class="page-title" id="wx-chat-title">沈衍</span></div>
   <div class="chat-body" id="wx-msgs">
     <div class="msg his"><div class="bubble">我不找人。想来的，自己会来。</div><div class="time">21:32</div></div>
     <div class="msg his"><div class="bubble">你是来试试的，还是来理清自己的？想清楚再答。</div><div class="time">21:32</div></div>
@@ -633,6 +632,28 @@
     </div>
   </div>
 </div>
+<!-- 角色编辑/新建 -->
+<div class="app-page" id="char-edit">
+  <div class="page-head"><button class="back-btn" data-back>‹</button><span class="page-title" id="ce-title">角色</span></div>
+  <div class="page-body" style="padding:14px 16px 30px;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;gap:12px;align-items:center">
+      <div id="ce-avatar" style="width:62px;height:62px;border-radius:18px;background:linear-gradient(145deg,#7E7898,#4A4460);color:#fff;display:flex;align-items:center;justify-content:center;font-size:30px;flex:none;">🙂</div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+        <input id="ce-avinput" type="text" placeholder="头像：一个emoji或一个字" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px;outline:none;background:#fff;user-select:text;">
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-sub)">头像底色 <input id="ce-color" type="color" value="#4A4460" style="width:44px;height:30px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:2px"></div>
+      </div>
+    </div>
+    <input id="ce-name" type="text" placeholder="名字" style="border:1px solid var(--line);border-radius:12px;padding:12px;font-size:15px;outline:none;background:#fff;user-select:text;font-weight:600">
+    <input id="ce-intro" type="text" placeholder="简介/签名（显示在微信列表里）" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13px;outline:none;background:#fff;user-select:text;">
+    <textarea id="ce-style" placeholder="说话风格，例：说话短，不解释，不哄，不轻易夸；观察入微，一针见血。" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13px;outline:none;background:#fff;resize:none;height:64px;line-height:1.6;user-select:text;"></textarea>
+    <textarea id="ce-persona" placeholder="人设正文：性格、背景、外貌、规矩、你们的关系…都写在这里，他会照此扮演。" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13px;outline:none;background:#fff;resize:none;height:190px;line-height:1.7;user-select:text;"></textarea>
+    <div style="display:flex;gap:10px">
+      <button class="m-btn primary" id="ce-save" style="flex:1;padding:12px">保存</button>
+      <button class="m-btn danger" id="ce-del">删除</button>
+    </div>
+    <div class="mcp-hint">保存后立即生效。每个角色的聊天记录单独保存，互不干扰。默认角色「沈衍」不可删除。</div>
+  </div>
+</div>
 <div class="modal" id="mem-modal">
   <div class="modal-card">
     <h3 id="mem-modal-title">编辑记忆</h3>
@@ -773,24 +794,24 @@
 
   /* 桌面 */
   var apps=[
-    {id:'wechat',n:'微信',i:'💬',c:'#9DC29B',dock:true},
-    {id:'phone',n:'电话',i:'📞',c:'#8E7DB8',dock:true},
-    {id:'memory',n:'记忆',i:'🧠',c:'#E5B98A',dock:true},
-    {id:'hisdaily',n:'他的日常',i:'📱',c:'#5A5570',dock:true},
-    {id:'diary',n:'日记',i:'📔',c:'#A8C6E0'},
-    {id:'gallery',n:'相册',i:'🖼',c:'#E0B4C8'},
-    {id:'shop',n:'购物',i:'🛍',c:'#D8A48E'},
-    {id:'calendar',n:'日历',i:'📅',c:'#B9D0A8'},
-    {id:'worldbook',n:'世界书',i:'📖',c:'#7E97B8'},
-    {id:'desire',n:'他的内心',i:'💜',c:'#C08EA0'},
-    {id:'archive',n:'档案',i:'🗂',c:'#C9C2B2'},
-    {id:'mcp',n:'MCP',i:'🔌',c:'#7FA0C8'},
-    {id:'settings',n:'设置',i:'⚙️',c:'#D8D2C2'}
+    {id:'wechat',n:'微信',i:'💬',c:'linear-gradient(145deg,#A7DF9C,#5FA95F)',dock:true},
+    {id:'phone',n:'电话',i:'📞',c:'linear-gradient(145deg,#B9A8E8,#7A67B5)',dock:true},
+    {id:'memory',n:'记忆',i:'🧠',c:'linear-gradient(145deg,#F2D3A4,#D99A5B)',dock:true},
+    {id:'hisdaily',n:'他的日常',i:'📱',c:'linear-gradient(145deg,#7E7898,#4A4460)',dock:true},
+    {id:'diary',n:'日记',i:'📔',c:'linear-gradient(145deg,#C7DDF2,#86ABCC)'},
+    {id:'gallery',n:'相册',i:'🖼',c:'linear-gradient(145deg,#F2CCDD,#CB92AD)'},
+    {id:'shop',n:'购物',i:'🛍',c:'linear-gradient(145deg,#EDC5AD,#C17E63)'},
+    {id:'calendar',n:'日历',i:'📅',c:'linear-gradient(145deg,#D5E7C6,#95B984)'},
+    {id:'worldbook',n:'世界书',i:'📖',c:'linear-gradient(145deg,#A7BCDC,#64809F)'},
+    {id:'desire',n:'他的内心',i:'💜',c:'linear-gradient(145deg,#DCAEC4,#9F6580)'},
+    {id:'archive',n:'档案',i:'🗂',c:'linear-gradient(145deg,#DFD9CC,#AEA591)'},
+    {id:'mcp',n:'MCP',i:'🔌',c:'linear-gradient(145deg,#A9C4E4,#5E82AE)'},
+    {id:'settings',n:'设置',i:'⚙️',c:'linear-gradient(145deg,#EAE5D8,#BFB9A5)'}
   ];
   apps.forEach(function(a){
     var b=document.createElement('button');
     b.className='app';
-    b.innerHTML='<span class="icon" style="background:'+a.c+'">'+a.i+'</span><span class="name">'+a.n+'</span>';
+    b.innerHTML='<span class="icon" style="background:'+a.c+'"><span class="ie">'+a.i+'</span></span><span class="name">'+a.n+'</span>';
     b.onclick=function(){openPage(a.id);};
     (a.dock?$('dock'):$('apps')).appendChild(b);
   });
@@ -802,7 +823,7 @@
     if(id==='calendar')renderCds();
     if(id==='shop'){renderGoods();renderCart();renderOrders();}
     if(id==='worldbook')renderWbs();
-    if(id==='wechat')loadHistory();
+    if(id==='wechat'){renderWxList();}
     if(id==='moments')renderMoments();
     if(id==='desire')renderDesire();
     if(id==='mcp')renderMcp();
@@ -863,7 +884,88 @@
       ['list','contacts','find','me'].forEach(function(k){$('wx-'+k).style.display=(k===m)?'':'none';});
     };
   });
-  $('cell-yan').onclick=function(){$('wx-chat').classList.add('open');};
+  /* 角色系统 */
+  var wxChars=[];
+  var curChar=null;
+  var curCharEditId=null;
+  function localDefaultChar(){return {id:'main',name:'沈衍',avatar:'衍',color:'#4A4360',intro:'BDSM圈内知名Dom · 24/7',persona:'',style:''};}
+  function renderWxList(){
+    var list=$('wx-list');if(!list)return;
+    if(API_BASE){
+      api('/api/characters').then(function(j){
+        wxChars=(j.characters&&j.characters.length)?j.characters:[localDefaultChar()];
+        paintWxList();
+      }).catch(function(){wxChars=[localDefaultChar()];paintWxList();});
+    }else{wxChars=[localDefaultChar()];paintWxList();}
+  }
+  function paintWxList(){
+    var list=$('wx-list');if(!list)return;
+    list.innerHTML='';
+    wxChars.forEach(function(c){
+      var d=document.createElement('div');
+      d.className='cell';
+      d.innerHTML='<div class="c-icon" data-cid="'+esc(c.id)+'" style="background:'+(c.color||'#4A4360')+'">'+esc(c.avatar||'🙂')+'</div>'+
+        '<div class="c-main"><div class="c-title">'+esc(c.name)+'</div><div class="c-sub">'+esc(c.intro||'')+'</div></div>'+
+        '<div class="c-time"></div>';
+      d.onclick=function(){openWxChat(c);};
+      list.appendChild(d);
+    });
+    [].slice.call(list.querySelectorAll('[data-cid]')).forEach(function(ic){
+      ic.onclick=function(e){e.stopPropagation();var c=findChar(ic.getAttribute('data-cid'));if(c)openCharEdit(c);};
+    });
+  }
+  function findChar(id){for(var i=0;i<wxChars.length;i++)if(wxChars[i].id===id)return wxChars[i];return null;}
+  function openWxChat(c){
+    curChar=c;
+    $('wx-chat-title').textContent=c.name;
+    $('wx-input').placeholder='给'+c.name+'发消息…';
+    $('wx-chat').classList.add('open');
+    if(c.id!=='main')$('wx-msgs').innerHTML='';
+    loadHistory();
+  }
+  function openCharEdit(c){
+    curCharEditId=c?c.id:null;
+    $('ce-title').textContent=(c&&c.id&&c.id!=='__new__')?('编辑 · '+c.name):'新建角色';
+    $('ce-name').value=c?(c.name||''):'';
+    $('ce-avinput').value=c?(c.avatar||'🙂'):'🙂';
+    $('ce-color').value=c?(c.color||'#4A4360'):'#4A4360';
+    $('ce-intro').value=c?(c.intro||''):'';
+    $('ce-style').value=c?(c.style||''):'';
+    $('ce-persona').value=c?(c.persona||''):'';
+    $('ce-avatar').textContent=c?(c.avatar||'🙂'):'🙂';
+    $('ce-avatar').style.background=c?(c.color||'#4A4360'):'#4A4360';
+    $('ce-del').style.display=(c&&c.id&&c.id!=='__new__'&&c.id!=='main')?'':'none';
+    $('char-edit').classList.add('open');
+  }
+  $('wx-add').onclick=function(){openCharEdit({id:'__new__'});};
+  $('ce-avinput').oninput=function(){$('ce-avatar').textContent=this.value||'🙂';};
+  $('ce-color').oninput=function(){$('ce-avatar').style.background=this.value;};
+  var ceDelArmed=false;
+  $('ce-save').onclick=function(){
+    var name=$('ce-name').value.trim();
+    if(!name){toast('名字不能为空');return;}
+    var data={name:name,avatar:$('ce-avinput').value.trim()||'🙂',color:$('ce-color').value||'#4A4360',intro:$('ce-intro').value.trim(),style:$('ce-style').value.trim(),persona:$('ce-persona').value.trim()};
+    if(!API_BASE){toast('本地模式暂不支持修改角色，请先连上服务器');return;}
+    var id=(curCharEditId&&curCharEditId!=='__new__')?curCharEditId:null;
+    var p=id?api('/api/characters/'+id,{method:'PUT',body:data}):api('/api/characters',{method:'POST',body:data});
+    p.then(function(j){
+      $('char-edit').classList.remove('open');
+      toast('已保存：'+j.character.name);
+      renderWxList();
+    }).catch(function(e){toast('保存失败：'+e.message);});
+  };
+  $('ce-del').onclick=function(){
+    var id=curCharEditId;
+    if(!id||id==='__new__'||id==='main')return;
+    if(!ceDelArmed){ceDelArmed=true;$('ce-del').textContent='再点一次确认';setTimeout(function(){ceDelArmed=false;$('ce-del').textContent='删除';},4000);return;}
+    ceDelArmed=false;
+    api('/api/characters/'+id,{method:'DELETE'}).then(function(){
+      $('char-edit').classList.remove('open');
+      if(curChar&&curChar.id===id)curChar=null;
+      toast('已删除');
+      renderWxList();
+    }).catch(function(e){toast('删除失败：'+e.message);});
+  };
   $('wx-chat-back').onclick=function(){$('wx-chat').classList.remove('open');};
   $('gm-moments').onclick=function(){openPage('moments');};
   $('gm-letter').onclick=function(){$('letter').classList.add('open');};
@@ -892,7 +994,7 @@
     $('wx-msgs').appendChild(m);
     $('wx-msgs').scrollTop=1e6;
     var subTxt=type==='photo'?'[图片]':(type==='video'?'[视频]':(type==='file'?'[文件]':(type==='loc'?'[位置]':(type==='transfer'?'[转账 ¥'+content+']':content))));
-    $('cell-sub').textContent=String(subTxt).slice(0,20);
+    var cs=$('cell-sub');if(cs)cs.textContent=String(subTxt).slice(0,20);
   }
   var MODE=(localStorage.getItem('home_mode')||'online')==='offline'?'offline':'online';
   function saveMode(){localStorage.setItem('home_mode',MODE);}
@@ -902,8 +1004,10 @@
     else addWxMsg('嗯。我在。',false);
   }
   function loadHistory(){
+    if(!curChar)curChar=localDefaultChar();
+    var sid=curChar.id||'main';
     if(!API_BASE)return;
-    api('/api/messages?session_id=main').then(function(j){
+    api('/api/messages?session_id='+encodeURIComponent(sid)).then(function(j){
       if(j.messages&&j.messages.length){
         $('wx-msgs').innerHTML='';
         j.messages.forEach(function(m){addWxMsg(m.content,m.role==='user');});
@@ -933,7 +1037,7 @@
     fetch(API_BASE+'/api/chat',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({session_id:'main',message:v,stream:true})
+      body:JSON.stringify({session_id:(curChar?curChar.id:'main'),character_id:(curChar?curChar.id:'main'),message:v,stream:true})
     }).then(function(resp){
       if(!resp.ok||!resp.body)throw new Error('HTTP '+resp.status);
       var reader=resp.body.getReader();
@@ -944,7 +1048,7 @@
           if(res.done){
             bubble.classList.remove('streaming');
             if(!full){bubble.textContent='（没有收到回复）';}
-            $('cell-sub').textContent=(full||'（空）').slice(0,20);
+            var cs=$('cell-sub');if(cs)cs.textContent=(full||'（空）').slice(0,20);
             wxBusy=false;
             return;
           }
